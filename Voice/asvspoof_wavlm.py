@@ -13,6 +13,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_curve
 
 import soundfile as sf
+import joblib
 
 
 TRAIN_PROTOCOL = r"data/ASV/ASVspoof2019.LA.cm.train.trn.txt"
@@ -235,6 +236,14 @@ def main():
     eer, thr = compute_eer(y_dev, scores)
     print(f"\nEER = {eer*100:.2f}%  (threshold={thr:.4f})")
     print("Note: lower EER is better.\n")
+
+    # Save the model
+    Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
+
+    joblib.dump(clf, Path(CACHE_DIR) / "wavlm_lr.joblib")
+
+    # Save threshold
+    (Path(CACHE_DIR) / "threshold.txt").write_text(str(thr))
 
 
 if __name__ == "__main__":
