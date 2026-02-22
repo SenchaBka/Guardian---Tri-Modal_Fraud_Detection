@@ -13,8 +13,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from transformers import AutoFeatureExtractor, AutoModel
 
 import librosa
-
 from fastapi import HTTPException
+
+from dotenv import load_dotenv
+from elevenlabs.client import ElevenLabs
+
+load_dotenv(override=True)
 
 # -------------------------
 # Config
@@ -137,4 +141,54 @@ async def score_voice(file: UploadFile = File(...)):
             try:
                 os.remove(tmp_path)
             except Exception:
+                pass 
+
+
+# -------------------------
+# SPEECH TO TEXT 
+# -------------------------
+
+# Initialize ElevenLabs client
+client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+
+# API endpoint
+@app.post("/api/v1/voice/transcribe")
+async def transcribe_audio(file: UploadFile = File(...)):
+    # Read file
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty upload.")
+
+    # Save temp file
+    suffix = Path(file.filename or "").suffix.lower() or ".bin"
+    tmp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+
+        # Send to ElevenLabs
+        with open(tmp_path, "rb") as f:
+            transcription = client.speech_to_text.convert(
+                file=f,
+                model_id="scribe_v2",
+                language_code=None,
+                diarize=True,
+                tag_audio_events=True
+            )
+
+        return {
+            "filename": file.filename,
+            "transcription": transcription
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except:
                 pass
