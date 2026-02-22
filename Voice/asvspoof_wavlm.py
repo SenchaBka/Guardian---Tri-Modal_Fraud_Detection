@@ -226,7 +226,7 @@ def main():
     X_dev,   y_dev   = build_features(dev_items,   DEV_AUDIO_DIR,   str(dev_cache))
 
     # Train the model
-    clf = LogisticRegression(max_iter=2000, n_jobs=-1)
+    clf = LogisticRegression(max_iter=2000)
     clf.fit(X_train, y_train)
 
     # Probability of bonafide (real)
@@ -235,7 +235,6 @@ def main():
     # Compute and display EER
     eer, thr = compute_eer(y_dev, scores)
     print(f"\nEER = {eer*100:.2f}%  (threshold={thr:.4f})")
-    print("Note: lower EER is better.\n")
 
     # Save the model
     Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
