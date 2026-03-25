@@ -4,16 +4,11 @@ from transformers import AutoModel, AutoFeatureExtractor
 import joblib
 import librosa
 from pathlib import Path
+from config import MODEL_NAME, DEVICE, MODEL_PATH, THRESHOLD_PATH
 
 # PATHS
 AUDIO_PATH = "data/sample_real2.flac"  
-MODEL_PATH = "data/ASV/cache/wavlm_lr.joblib"
-THRESHOLD_PATH = "data/ASV/cache/threshold.txt"
-
 THRESHOLD = float(Path(THRESHOLD_PATH).read_text().strip())
-
-MODEL_NAME = "microsoft/wavlm-base"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # LOAD CLASSIFIER 
 clf = joblib.load(MODEL_PATH)
