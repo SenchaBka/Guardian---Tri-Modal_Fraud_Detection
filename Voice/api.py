@@ -6,15 +6,14 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 
-from preprocessor import load_audio_16k_mono
-from deepfake_detector import score_audio
-from transcription import transcribe_audio_file
-from config import MAX_UPLOAD_MB
+from .preprocessor import load_audio_16k_mono
+from .deepfake_detector import score_audio
+from .transcription import transcribe_audio_file
+from .config import MAX_UPLOAD_MB, get_api_key
 
 from elevenlabs.client import ElevenLabs
-from config import ELEVENLABS_API_KEY
 
-client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+client = ElevenLabs(api_key=get_api_key())
 
 def get_client():
     return client

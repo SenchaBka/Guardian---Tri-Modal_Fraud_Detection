@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from model_loader import feature_extractor, wavlm, DEVICE
+from .model_loader import feature_extractor, wavlm, DEVICE
 
 @torch.no_grad()
 def extract_embeddings(audio_1d: np.ndarray) -> np.ndarray:

@@ -1,5 +1,5 @@
-from feature_extractor import extract_embeddings
-from model_loader import clf, THRESHOLD
+from .feature_extractor import extract_embeddings
+from .model_loader import clf, THRESHOLD
 
 def score_audio(audio):
     emb = extract_embeddings(audio).reshape(1, -1)

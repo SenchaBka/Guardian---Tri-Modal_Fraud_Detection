@@ -1,4 +1,4 @@
-from config import MODEL_NAME, DEVICE, MODEL_PATH, THRESHOLD_PATH
+from .config import MODEL_NAME, DEVICE, MODEL_PATH, THRESHOLD_PATH
 import joblib
 from transformers import AutoFeatureExtractor, AutoModel
 from fastapi import HTTPException
