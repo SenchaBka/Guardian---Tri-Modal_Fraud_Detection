@@ -4,12 +4,20 @@ import os
 import tempfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 
 from preprocessor import load_audio_16k_mono
 from deepfake_detector import score_audio
 from transcription import transcribe_audio_file
 from config import MAX_UPLOAD_MB
+
+from elevenlabs.client import ElevenLabs
+from config import ELEVENLABS_API_KEY
+
+client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+
+def get_client():
+    return client
 
 app = FastAPI(title="Guardian Voice Scoring API", version="1.1")
 
@@ -44,7 +52,7 @@ async def score_voice(file: UploadFile = File(...)):
         # for "Empty or unreadable audio." and similar validation errors
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to score audio: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to score audio: {e}")
     finally:
         if tmp_path:
             try:
@@ -55,7 +63,7 @@ async def score_voice(file: UploadFile = File(...)):
 
 # API endpoint
 @app.post("/api/v1/voice/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
+async def transcribe_audio(file: UploadFile = File(...), client = Depends(get_client)):
     # Read file
     data = await file.read()
     if not data:
@@ -70,7 +78,7 @@ async def transcribe_audio(file: UploadFile = File(...)):
             tmp.write(data)
             tmp_path = tmp.name
 
-        transcription = transcribe_audio_file(tmp_path)
+        transcription = transcribe_audio_file(tmp_path, client)
 
         return {
             "filename": file.filename,
@@ -84,5 +92,5 @@ async def transcribe_audio(file: UploadFile = File(...)):
         if tmp_path:
             try:
                 os.remove(tmp_path)
-            except:
+            except Exception:
                 pass
