@@ -19,7 +19,10 @@ def load_threshold() -> float:
     except:
         raise HTTPException(status_code=500, detail="Invalid threshold file")
 
-THRESHOLD = load_threshold()
+try:
+    THRESHOLD = load_threshold()
+except Exception:
+    THRESHOLD = None
 
 # Load WavLM
 feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)

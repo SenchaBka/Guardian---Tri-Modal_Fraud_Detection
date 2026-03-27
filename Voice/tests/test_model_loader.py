@@ -3,7 +3,10 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 import pytest
 
-# Mock dependencies and THRESHOLD_PATH before importing model_loader
+# Remove any MagicMock injected by other test files
+sys.modules.pop("Voice.model_loader", None)
+
+# Mock heavy dependencies before importing the real model_loader
 with patch("joblib.load") as mock_joblib, \
      patch("transformers.AutoFeatureExtractor.from_pretrained") as mock_feat_ext, \
      patch("transformers.AutoModel.from_pretrained") as mock_model, \
@@ -14,7 +17,10 @@ with patch("joblib.load") as mock_joblib, \
     mock_threshold_path.exists.return_value = True
     mock_threshold_path.read_text.return_value = "0.5"
     
-    from ..model_loader import load_threshold
+    import importlib
+    import Voice.model_loader
+    importlib.reload(Voice.model_loader)
+    from Voice.model_loader import load_threshold
 
 
 @patch("Voice.model_loader.THRESHOLD_PATH")
