@@ -88,7 +88,7 @@ class VoicePayload(BaseModel):
 
 class NumericalFeatures(BaseModel):
     feature_vector: Optional[List[float]] = Field(default=None)
-    raw_features: Optional[Dict[str, Any]] = Field(default=None)
+_features: Optional[Dict[str, Any]] = Field(default=None)
 
 
 class FusionOptions(BaseModel):
@@ -98,7 +98,7 @@ class FusionOptions(BaseModel):
 
 
 class FusionRequest(BaseModel):
-    transaction_id: str = Field(...)
+    transaction_id: str = Field(..., min_length=1)
     available_modalities: Optional[AvailableModalities] = Field(default=None)
     transaction_data: TransactionData = Field(...)
     text_payload: Optional[TextPayload] = Field(default=None)
