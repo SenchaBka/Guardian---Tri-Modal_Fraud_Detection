@@ -2,7 +2,7 @@
 
 FastAPI entrypoint for the NLP Stream.
 
-Endpoint (Iteration #1 MVP):
+Endpoint (Iteration 2):
 - POST /api/v1/nlp/score
 
 Input:
@@ -10,8 +10,8 @@ Input:
 
 Processing:
 - RawNLPRequest -> NLPInput (canonicalization + cleaning)
-- Semantic risk scoring (FinBERT if available, otherwise heuristic fallback)
-- (Optional) placeholders for other signals (typosquatting, entity inconsistency)
+- Fraud probability scoring using the fine-tuned PaySim FinBERT model
+- Heuristic fallback only if the local model cannot load
 
 Output:
 - NLPOutput (NLP -> Fusion)
@@ -25,15 +25,19 @@ Note:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 
 from ..classifier import get_semantic_risk
-from ..model_loader import healthcheck_model
+from ..model_loader import healthcheck_model, load_trained_nlp_bundle
 from ..preprocessor import DEFAULT_CFG, raw_request_to_nlp_input
 from .schemas import NLPOutput, NLPStatus, RawNLPRequest
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -43,28 +47,58 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+def warmup_model() -> None:
+    """Warm-load the trained NLP model when the API starts."""
+    try:
+        logger.info("Warming up NLP model on API startup")
+        load_trained_nlp_bundle()
+    except Exception:
+        # Keep API bootable even if model load fails; health endpoint will report it.
+        logger.error("Failed to warm up NLP model during startup", exc_info=True)
+        pass
+
+
 @app.get("/health")
 def health():
     ok, msg = healthcheck_model()
-    return {
+    response = {
         "status": "ok" if ok else "degraded",
         "model": msg,
     }
 
+    try:
+        bundle = load_trained_nlp_bundle()
+        response["threshold"] = float(bundle.threshold)
+        response["model_version"] = str(bundle.model_name)
+        response["device"] = str(bundle.device)
+    except Exception:
+        pass
+
+    return response
+
 
 @app.post("/api/v1/nlp/score", response_model=NLPOutput)
 def score_nlp(req: RawNLPRequest) -> NLPOutput:
-    """Score text risk for a transaction."""
+    """Score fraud risk for a transaction using the trained NLP model."""
 
     t0 = time.time()
+    logger.info("Incoming request: %s", req.transaction_id)
 
     try:
         nlp_input = raw_request_to_nlp_input(req, cfg=DEFAULT_CFG, combine_sources=True)
+        logger.info("Text length: %s", len(nlp_input.text))
     except Exception as e:
+        logger.error("Error processing request", exc_info=True)
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Semantic risk (primary MVP signal)
+    # Fraud probability from the trained transformer classifier
     sem = get_semantic_risk(nlp_input.text)
+    logger.info(
+        "Score: %s | Threshold: %s",
+        float(sem.score),
+        float(sem.threshold) if sem.threshold is not None else "none",
+    )
 
     # Placeholders (Iteration #1)
     typosquatting_risk: Optional[float] = None
@@ -73,6 +107,8 @@ def score_nlp(req: RawNLPRequest) -> NLPOutput:
     # Determine status
     status = NLPStatus.ok
     if "[NO_TEXT]" in nlp_input.text or len(nlp_input.text.strip()) < 8:
+        status = NLPStatus.degraded
+    elif str(sem.model_version) == "heuristic_v1":
         status = NLPStatus.degraded
 
     # Compose output
@@ -85,11 +121,28 @@ def score_nlp(req: RawNLPRequest) -> NLPOutput:
             "semantic_risk": float(sem.score),
             "typosquatting_risk": typosquatting_risk,
             "entity_inconsistency": entity_inconsistency,
+            "threshold_used": float(sem.threshold) if sem.threshold is not None else None,
+            "predicted_fraud": (
+                float(sem.details.get("predicted_fraud"))
+                if sem.details and "predicted_fraud" in sem.details
+                else None
+            ),
         },
     )
 
     # (Optional) For debugging latency locally.
     # Fusion layer typically measures service latency in orchestration.
     _latency_ms = int((time.time() - t0) * 1000)
+
+    # Useful local debug values (not part of the external contract):
+    # - fraud_probability = out.score_nlp
+    # - threshold_used = out.signals.get("threshold_used")
+    # - predicted_fraud = out.signals.get("predicted_fraud")
+    logger.info(
+        "Completed request %s with status=%s in %sms",
+        req.transaction_id,
+        out.status.value,
+        _latency_ms,
+    )
 
     return out

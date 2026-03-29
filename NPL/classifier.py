@@ -2,29 +2,28 @@
 
 NLP Stream classifier utilities.
 
-Iteration #1 MVP goal:
-- Produce a normalized semantic risk score in [0, 1] for a given text.
+Iteration 2 goal:
+- Use the locally fine-tuned PaySim FinBERT model to produce a real fraud score.
+- Apply the calibrated validation threshold selected during training.
+- Keep a heuristic fallback only if the local model cannot load.
 
-Important note about FinBERT:
-- Many commonly used "FinBERT" checkpoints (e.g., ProsusAI/finbert) are trained for
-  financial sentiment classification (positive/negative/neutral), not fraud directly.
-- For this capstone MVP, we convert sentiment logits into a risk proxy:
-    semantic_risk := P(negative)
-  This is a reasonable stand-in when the text resembles complaints, disputes, urgency,
-  or anomalous narratives. Later iterations can replace this with a fraud-specific model.
-
-If the transformer model cannot load (offline/no deps), we fall back to a lightweight
-heuristic scorer so the API remains functional.
+Important:
+- We no longer use sentiment logits as a risk proxy.
+- The transformer now performs direct binary fraud classification.
+- `score` represents the model probability for the fraud class.
 """
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from .model_loader import load_finbert_bundle
+from .model_loader import load_trained_nlp_bundle
+
+logger = logging.getLogger(__name__)
 
 
 # -----------------------------
@@ -111,27 +110,29 @@ class SemanticRiskResult:
     score: float
     model_version: str
     details: Optional[Dict[str, float]] = None
+    threshold: Optional[float] = None
 
 
 def get_semantic_risk(text: str, *, max_length: int = 256) -> SemanticRiskResult:
-    """Compute semantic risk score in [0, 1] for an input text.
+    """Compute fraud probability score in [0, 1] for an input text.
 
     Args:
         text: Canonicalized text from NLPInput
         max_length: Token cap for transformer input
 
     Returns:
-        SemanticRiskResult(score, model_version, details)
+        SemanticRiskResult(score, model_version, details, threshold)
 
     Behavior:
-    - If FinBERT is available, returns P(negative) as risk proxy.
-    - Otherwise returns heuristic risk.
+    - If the trained local fraud model is available, returns the fraud probability.
+    - Otherwise returns a heuristic fallback risk.
     """
 
     cleaned = (text or "").strip()
 
     try:
-        bundle = load_finbert_bundle()
+        logger.info("Running NLP inference...")
+        bundle = load_trained_nlp_bundle()
         tokenizer = bundle.tokenizer
         model = bundle.model
         device = bundle.device
@@ -156,31 +157,46 @@ def get_semantic_risk(text: str, *, max_length: int = 256) -> SemanticRiskResult
 
         probs = _softmax(logits)
 
-        # Try to map label names if present
+        # Binary fraud classifier convention used in Iteration 2:
+        # class 0 = non-fraud, class 1 = fraud
+        fraud_prob = float(probs[1]) if len(probs) > 1 else float(probs[0])
+
         id2label = getattr(model.config, "id2label", {}) or {}
         label_probs: Dict[str, float] = {}
         for i, p in enumerate(probs):
-            name = str(id2label.get(i, i)).lower()
+            raw_name = str(id2label.get(i, i)).lower()
+            if raw_name in {"0", "label_0", "non_fraud", "non-fraud", "legit", "negative"}:
+                name = "non_fraud"
+            elif raw_name in {"1", "label_1", "fraud", "positive"}:
+                name = "fraud"
+            else:
+                name = raw_name
             label_probs[name] = float(p)
 
-        # Heuristic mapping to "negative" class
-        neg_keys = [k for k in label_probs.keys() if "neg" in k]
-        if neg_keys:
-            risk = label_probs[neg_keys[0]]
-        else:
-            # Common ordering for finbert sentiment is: [negative, neutral, positive]
-            risk = probs[0] if len(probs) >= 1 else 0.5
+        label_probs["fraud_probability"] = fraud_prob
+        label_probs["threshold"] = float(bundle.threshold)
+        label_probs["predicted_fraud"] = float(fraud_prob >= bundle.threshold)
+        logger.info("Fraud probability: %.6f", fraud_prob)
+        if abs(fraud_prob - float(bundle.threshold)) < 0.05:
+            logger.warning("Very low confidence prediction")
 
         return SemanticRiskResult(
-            score=_clip01(float(risk)),
+            score=_clip01(fraud_prob),
             model_version=bundle.model_name,
             details=label_probs,
+            threshold=float(bundle.threshold),
         )
 
     except Exception:
         # Keep API functional even if model is unavailable
+        logger.error("NLP inference failed, using heuristic fallback", exc_info=True)
+        fallback_score = heuristic_semantic_risk(cleaned)
         return SemanticRiskResult(
-            score=heuristic_semantic_risk(cleaned),
+            score=fallback_score,
             model_version="heuristic_v1",
-            details=None,
+            details={
+                "fraud_probability": fallback_score,
+                "fallback_used": 1.0,
+            },
+            threshold=None,
         )

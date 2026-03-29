@@ -1,27 +1,33 @@
 """guardian.nlp.model_loader
 
-Model loading utilities for the NLP Stream (Iteration #1 MVP).
+Model loading utilities for the NLP Stream.
 
-Goal:
-- Load the transformer model ONCE (lazy) and reuse it across requests.
-- Provide a simple interface for downstream modules (classifier.py).
+Current goal:
+- Load the trained PaySim FinBERT model ONCE (lazy) and reuse it across requests.
+- Expose the tokenizer, model, device, and calibrated fraud threshold.
 
 Notes:
-- For the MVP we support FinBERT-style models from HuggingFace.
-- If the model isn't available locally, HF will try to download it.
-  (For demo environments without internet, pre-download or vendor the model.)
+- Iteration 2 now uses the fine-tuned local checkpoint instead of the generic
+  FinBERT sentiment model from HuggingFace.
+- If needed, the model path and threshold can still be overridden through
+  environment variables.
 
 Environment variables (optional):
-- NLP_MODEL_NAME: HuggingFace model id (default: ProsusAI/finbert)
-- NLP_DEVICE: 'cpu' or 'cuda' (default: auto)
+- NLP_MODEL_DIR: local directory of the trained checkpoint
+  (default: models/nlp/finbert/paysim_sample100k_ep2)
+- NLP_THRESHOLD: calibrated fraud threshold (default: 0.0039)
+- NLP_DEVICE: 'cpu', 'cuda', or 'mps' (default: auto)
 """
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional, Tuple
+from typing import Tuple
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,7 @@ class ModelBundle:
     tokenizer: object
     model: object
     device: str
+    threshold: float
 
 
 def _resolve_device() -> str:
@@ -60,22 +67,28 @@ def _resolve_device() -> str:
 
 
 @lru_cache(maxsize=1)
-def load_finbert_bundle() -> ModelBundle:
-    """Lazy-load and cache the FinBERT bundle.
+def load_trained_nlp_bundle() -> ModelBundle:
+    """Lazy-load and cache the trained NLP model bundle.
 
     Returns:
-        ModelBundle(tokenizer, model, device)
+        ModelBundle(tokenizer, model, device, threshold)
 
     Raises:
         RuntimeError if transformers/torch are not installed.
     """
 
-    model_name = os.getenv("NLP_MODEL_NAME", "ProsusAI/finbert")
+    model_dir = os.getenv(
+        "NLP_MODEL_DIR", "models/nlp/finbert/paysim_sample100k_ep2"
+    )
+    threshold = float(os.getenv("NLP_THRESHOLD", "0.0039"))
     device = _resolve_device()
+    logger.info("Loading FinBERT model...")
+    logger.info("Model path: %s", model_dir)
 
     try:
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
     except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
         raise RuntimeError(
             "transformers is required. Install with: pip install transformers"
         ) from e
@@ -83,22 +96,29 @@ def load_finbert_bundle() -> ModelBundle:
     try:
         import torch
     except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
         raise RuntimeError("torch is required. Install with: pip install torch") from e
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        model = AutoModelForSequenceClassification.from_pretrained(model_dir)
 
-    # Move model to device
-    if device in {"cuda", "mps"}:
-        model = model.to(device)
+        if device in {"cuda", "mps"}:
+            model = model.to(device)
 
-    model.eval()
+        model.eval()
+    except Exception:
+        logger.error("Failed to load model", exc_info=True)
+        raise
+
+    logger.info("Model loaded successfully")
 
     return ModelBundle(
-        model_name=model_name,
+        model_name=model_dir,
         tokenizer=tokenizer,
         model=model,
         device=device,
+        threshold=threshold,
     )
 
 
@@ -109,7 +129,12 @@ def healthcheck_model() -> Tuple[bool, str]:
     """
 
     try:
-        b = load_finbert_bundle()
-        return True, f"loaded {b.model_name} on {b.device}"
+        b = load_trained_nlp_bundle()
+        return True, f"loaded {b.model_name} on {b.device} | threshold={b.threshold}"
     except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
         return False, f"model load failed: {e}"
+
+
+# Backwards-compatible alias used by earlier Iteration 1 code.
+load_finbert_bundle = load_trained_nlp_bundle
