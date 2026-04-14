@@ -1,6 +1,6 @@
 To start:
-cd Voice
-uvicorn api:app --reload
+pytest Voice/tests/ -v  
+uvicorn Voice.api:app --reload
 
 API Endpoints:
 1. /api/v1/voice/score
@@ -91,4 +91,5 @@ AFIs:
 2. Add logging
 3. Improve exception handling
 4. Prepare for scaling
+5. Implement Github Actions
 
