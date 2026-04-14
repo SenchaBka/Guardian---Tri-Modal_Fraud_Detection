@@ -14,7 +14,8 @@ def get_api_key():
 MODEL_NAME = "microsoft/wavlm-large"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-MODEL_PATH = Path("data/ASV/cache/wavlm_lr.joblib")
-THRESHOLD_PATH = Path("data/ASV/cache/threshold.txt")
+VOICE_DIR = Path(__file__).parent
+MODEL_PATH = VOICE_DIR / "data/ASV/cache/wavlm_lr.joblib"
+THRESHOLD_PATH = VOICE_DIR / "data/ASV/cache/threshold.txt"
 
 MAX_UPLOAD_MB = 30
