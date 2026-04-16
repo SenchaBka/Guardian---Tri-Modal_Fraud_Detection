@@ -72,6 +72,8 @@ def health():
         response["threshold"] = float(bundle.threshold)
         response["model_version"] = str(bundle.model_name)
         response["device"] = str(bundle.device)
+        response["model_source"] = str(getattr(bundle, "source", "unknown"))
+        response["model_revision"] = str(getattr(bundle, "revision", "unknown"))
     except Exception:
         pass
 

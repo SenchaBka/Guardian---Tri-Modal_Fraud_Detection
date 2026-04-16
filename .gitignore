@@ -68,6 +68,9 @@ env/
 *.pth
 *.onnx
 /models
+/guardian-finbert-npl/
+/guardian-finbert-npl/
+/guardina-trimodal-npl/
 
 ########################################
 # TEMP FILES
