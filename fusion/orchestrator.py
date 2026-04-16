@@ -13,6 +13,7 @@ import uuid
 import time
 import asyncio
 import random
+import httpx
 from datetime import datetime
 from typing import Dict, Optional, List, Tuple, Any
 
@@ -24,7 +25,7 @@ from .schemas import (
 )
 from .config import (
     MODEL_VERSION, USE_MOCK_APIS, MOCK_LATENCY,
-    CHANNEL_MODALITY_DEFAULTS,
+    CHANNEL_MODALITY_DEFAULTS, MODALITY_ENDPOINTS, API_TIMEOUTS,
 )
 from .ensemble import (
     renormalize_weights, compute_fraud_score,
@@ -266,17 +267,56 @@ class FusionOrchestrator:
     async def _call_numerical(self, request: FusionRequest) -> Tuple[float, Dict[str, float]]:
         if self.use_mocks:
             return await self._mock_numerical(request)
-        raise NotImplementedError("Real Numerical API not wired yet")
+        async with httpx.AsyncClient(timeout=API_TIMEOUTS["numerical"]) as client:
+            payload = {
+                "transaction_id":    request.transaction_id,
+                "amount":            request.transaction_data.amount,
+                "currency":          "USD",
+                "channel":           request.transaction_data.channel.value,
+                "country":           request.transaction_data.country or "US",
+                "merchant_category": request.transaction_data.merchant_category or "retail",
+            }
+            resp = await client.post(MODALITY_ENDPOINTS["numerical"], json=payload)
+            data = resp.json()
+            return data["fraud_score"], data.get("model_contributions", {})
 
     async def _call_nlp(self, request: FusionRequest) -> Tuple[float, Dict[str, float]]:
         if self.use_mocks:
             return await self._mock_nlp(request)
-        raise NotImplementedError("Real NLP API not wired yet")
+        async with httpx.AsyncClient(timeout=API_TIMEOUTS["nlp"]) as client:
+            payload = {
+                "transaction_id": request.transaction_id,
+                "language": "en",
+                "payload": {
+                    "merchant_text":  request.text_payload.merchant_text  if request.text_payload else "",
+                    "narrative_text": request.text_payload.narrative_text if request.text_payload else "",
+                    "invoice_text":   None,
+                    "ticket_text":    None,
+                },
+                "metadata": {
+                    "amount":           request.transaction_data.amount,
+                    "currency":         "USD",
+                    "country":          request.transaction_data.country or "US",
+                    "channel":          request.transaction_data.channel.value,
+                    "transaction_type": request.transaction_data.merchant_category or "retail",
+                },
+            }
+            resp = await client.post(MODALITY_ENDPOINTS["nlp"], json=payload)
+            data = resp.json()
+            return data["score_nlp"], data.get("signals", {})
 
     async def _call_voice(self, request: FusionRequest) -> Tuple[float, Dict[str, float]]:
         if self.use_mocks:
             return await self._mock_voice(request)
-        raise NotImplementedError("Real Voice API not wired yet")
+        async with httpx.AsyncClient(timeout=API_TIMEOUTS["voice"]) as client:
+            payload = {
+                "transaction_id": request.transaction_id,
+                "audio_url":      request.voice_payload.audio_url    if request.voice_payload else None,
+                "audio_base64":   request.voice_payload.audio_base64 if request.voice_payload else None,
+            }
+            resp = await client.post(MODALITY_ENDPOINTS["voice"], json=payload)
+            data = resp.json()
+            return data["fraud_score"], data.get("signals", {})
 
     # ------------------------------------------------------------------
     # Mock implementations (deterministic when seeded)

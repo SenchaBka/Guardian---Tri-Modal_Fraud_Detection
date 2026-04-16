@@ -67,7 +67,7 @@ API_TIMEOUTS: Dict[str, float] = {
 
 MODALITY_ENDPOINTS: Dict[str, str] = {
     "numerical": "http://localhost:8001/api/v1/numerical/score",
-    "nlp":       "http://localhost:8002/api/v1/nlp/score",
+    "nlp":       "http://localhost:8000/api/v1/nlp/score",
     "voice":     "http://localhost:8003/api/v1/voice/score",
 }
 
