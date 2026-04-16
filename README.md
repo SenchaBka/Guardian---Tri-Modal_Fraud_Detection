@@ -81,9 +81,15 @@ The NLP stream scores fraud risk from transaction text using a fine-tuned FinBER
 - Falls back to a local checkpoint if the hosted model cannot be loaded
 - Falls back again to a lightweight heuristic if model loading or inference fails
 
-### Model Serving Strategy
+### Why We Selected PR-AUC
 
-The API no longer depends on the `models/` folder as the primary source.
+PaySim is highly imbalanced, with a very small fraud class compared to legitimate transactions. Because of that, PR-AUC was more useful than plain accuracy and more informative than ROC-AUC for selecting a fraud model.
+
+- PR-AUC focuses on precision and recall for the rare positive class
+- it reduces the risk of overvaluing majority-class performance
+- it helped us choose checkpoints that were better aligned with fraud detection instead of overall class separation
+
+### Model Serving Strategy
 
 Current loading priority:
 
@@ -139,14 +145,6 @@ This installs the packages needed by the NLP API, preprocessing, tests, Hugging 
 #### 3. Make sure the model can be resolved
 
 By default, the API loads the promoted Hugging Face model first. If that is unavailable, it falls back to `models/nlp/finbert/paysim_sample100k_ep2`, and if neither source works, the service still starts with the heuristic fallback.
-
-### Why We Selected PR-AUC
-
-PaySim is highly imbalanced, with a very small fraud class compared to legitimate transactions. Because of that, PR-AUC was more useful than plain accuracy and more informative than ROC-AUC for selecting a fraud model.
-
-- PR-AUC focuses on precision and recall for the rare positive class
-- it reduces the risk of overvaluing majority-class performance
-- it helped us choose checkpoints that were better aligned with fraud detection instead of overall class separation
 
 ### Running The NLP API
 
@@ -227,9 +225,9 @@ Response field summary:
 - `signals.threshold_used`: active decision threshold if a model was used
 - `signals.predicted_fraud`: binary flag derived from the threshold when available
 
-### If You Want To Re-Generate The Model
+### If You Want To Re-Generate The Model (PaySim dataset required)
 
-Training is still fully supported. The promoted Hugging Face model was produced from the PaySim pipeline in this repository.
+Training is still fully supported. The promoted Hugging Face model was produced from the PaySim pipeline in this repository. 
 
 #### 1. Create a reproducible sample dataset
 
