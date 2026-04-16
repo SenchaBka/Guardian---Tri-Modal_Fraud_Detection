@@ -106,55 +106,6 @@ Optional environment variables:
 - `NLP_DEVICE`: `cpu`, `cuda`, or `mps`
 - `NLP_CACHE_DIR`: custom Hugging Face cache directory
 
-### If You Want To Re-Generate The Model
-
-Training is still fully supported. The promoted Hugging Face model was produced from the PaySim pipeline in this repository.
-
-#### 1. Create a reproducible sample dataset
-
-Run [`NPL/training/sample_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/sample_paysim.py):
-
-```bash
-python3 -m NPL.training.sample_paysim \
-  --input-path NPL/data/interim/paysim/paysim_nlp_interim.csv \
-  --output-path NPL/data/processed/paysim/paysim_sample_100k.csv \
-  --sample-size 100000
-```
-
-#### 2. Fine-tune FinBERT
-
-Run [`NPL/training/train_finbert_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/train_finbert_paysim.py):
-
-Recommended 2-epoch run:
-
-```bash
-python3 -m NPL.training.train_finbert_paysim \
-  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
-  --model-dir models/nlp/finbert/paysim_sample100k_ep2 \
-  --reports-dir reports/nlp/paysim_sample100k_ep2 \
-  --num-train-epochs 2 \
-  --learning-rate 2e-5 \
-  --max-length 128
-```
-
-Optional 3-epoch comparison run:
-
-```bash
-python3 -m NPL.training.train_finbert_paysim \
-  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
-  --model-dir models/nlp/finbert/paysim_sample100k_ep3 \
-  --reports-dir reports/nlp/paysim_sample100k_ep3 \
-  --num-train-epochs 3 \
-  --learning-rate 2e-5 \
-  --max-length 128
-```
-
-Generated artifacts:
-
-- Checkpoints in `models/nlp/...`
-- Evaluation reports in `reports/nlp/...`
-- Validation/test metrics including precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, and best threshold
-
 ### Before Running The NLP API
 
 Before starting `uvicorn`, prepare the environment so model loading and FastAPI startup do not fail.
@@ -285,6 +236,55 @@ Response field summary:
 - `signals.semantic_risk`: same score exposed for fusion
 - `signals.threshold_used`: active decision threshold if a model was used
 - `signals.predicted_fraud`: binary flag derived from the threshold when available
+
+### If You Want To Re-Generate The Model
+
+Training is still fully supported. The promoted Hugging Face model was produced from the PaySim pipeline in this repository.
+
+#### 1. Create a reproducible sample dataset
+
+Run [`NPL/training/sample_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/sample_paysim.py):
+
+```bash
+python3 -m NPL.training.sample_paysim \
+  --input-path NPL/data/interim/paysim/paysim_nlp_interim.csv \
+  --output-path NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --sample-size 100000
+```
+
+#### 2. Fine-tune FinBERT
+
+Run [`NPL/training/train_finbert_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/train_finbert_paysim.py):
+
+Recommended 2-epoch run:
+
+```bash
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep2 \
+  --reports-dir reports/nlp/paysim_sample100k_ep2 \
+  --num-train-epochs 2 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+Optional 3-epoch comparison run:
+
+```bash
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep3 \
+  --reports-dir reports/nlp/paysim_sample100k_ep3 \
+  --num-train-epochs 3 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+Generated artifacts:
+
+- Checkpoints in `models/nlp/...`
+- Evaluation reports in `reports/nlp/...`
+- Validation/test metrics including precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, and best threshold
 
 ### Running Tests (NLP)
 
