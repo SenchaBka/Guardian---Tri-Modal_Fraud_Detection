@@ -68,6 +68,11 @@ When a modality is missing, weights are divided by the sum of available base wei
 
 The NLP stream scores fraud risk from transaction text using a fine-tuned FinBERT classifier wrapped in a FastAPI service.
 
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![Transformers](https://img.shields.io/badge/Model-FinBERT-yellow?logo=huggingface&logoColor=black)
+![Serving](https://img.shields.io/badge/Serving-Hugging%20Face%20first-blue)
+![Fallback](https://img.shields.io/badge/Fallback-Local%20checkpoint%20%2B%20heuristic-lightgrey)
+
 ### What The NLP Stream Does
 
 - Validates and normalizes raw text payloads from the Fusion layer
@@ -241,6 +246,12 @@ Default local URL:
 #### `GET /health`
 
 Returns whether the NLP model loaded successfully and, when available, the active source, revision, device, and threshold.
+
+This route is the quickest way to confirm where the API is serving the model from:
+
+- If loading succeeds from Hugging Face, the response reflects the hosted repo and revision
+- If Hugging Face fails and the local fallback is used, the response reflects the local checkpoint path
+- If neither model source loads correctly, the API reports a degraded state
 
 #### `POST /api/v1/nlp/score`
 
