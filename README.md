@@ -59,5 +59,227 @@ When a modality is missing, weights are divided by the sum of available base wei
 | review   | 0.31 – 0.70       | Manual review           | Forced in fallback > 0.25 or low-confidence partial |
 | block    | 0.71 – 1.00       | Auto-block              | Forced in fallback > 0.60                      |
 
+
 ## Repository Structure
 
+---
+
+## NLP Stream (Luis)
+
+The NLP stream scores fraud risk from transaction text using a fine-tuned FinBERT classifier wrapped in a FastAPI service.
+
+![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
+![Transformers](https://img.shields.io/badge/Model-FinBERT-yellow?logo=huggingface&logoColor=black)
+![Serving](https://img.shields.io/badge/Serving-Hugging%20Face%20first-blue)
+![Fallback](https://img.shields.io/badge/Fallback-Local%20checkpoint%20%2B%20heuristic-lightgrey)
+
+### What The NLP Stream Does
+
+- Validates and normalizes raw text payloads from the Fusion layer
+- Combines available text fields into one canonical input
+- Scores fraud probability with a hosted Hugging Face model
+- Falls back to a local checkpoint if the hosted model cannot be loaded
+- Falls back again to a lightweight heuristic if model loading or inference fails
+
+### Why We Selected PR-AUC
+
+PaySim is highly imbalanced, with a very small fraud class compared to legitimate transactions. Because of that, PR-AUC was more useful than plain accuracy and more informative than ROC-AUC for selecting a fraud model.
+
+- PR-AUC focuses on precision and recall for the rare positive class
+- it reduces the risk of overvaluing majority-class performance
+- it helped us choose checkpoints that were better aligned with fraud detection instead of overall class separation
+
+### Model Serving Strategy
+
+Current loading priority:
+
+1. Hugging Face hosted model
+2. Local checkpoint in `models/nlp/finbert/paysim_sample100k_ep2`
+3. Heuristic fallback in code if model inference fails
+
+Default Hugging Face configuration in [`NPL/model_loader.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/model_loader.py):
+
+- `NLP_MODEL_NAME=Lmateosl/guardian-finbert-npl`
+- `NLP_MODEL_REVISION=main`
+- `NLP_THRESHOLD=0.0039`
+
+Optional environment variables:
+
+- `NLP_MODEL_NAME`: Hugging Face model repo id
+- `NLP_MODEL_REVISION`: branch, tag, or commit
+- `NLP_MODEL_DIR`: local fallback path
+- `NLP_THRESHOLD`: fraud decision threshold
+- `NLP_DEVICE`: `cpu`, `cuda`, or `mps`
+- `NLP_CACHE_DIR`: custom Hugging Face cache directory
+
+### Before Running The NLP API
+
+Before starting `uvicorn`, prepare the environment so model loading and FastAPI startup do not fail.
+
+#### 1. Create and activate a Python environment
+
+Example with Conda:
+
+```bash
+conda create -n guardian-npl python=3.12 -y
+conda activate guardian-npl
+```
+
+Or with `venv`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+#### 2. Install the NLP dependencies
+
+From the repository root:
+
+```bash
+pip install -r NPL/requirements.txt
+```
+
+This installs the packages needed by the NLP API, preprocessing, tests, Hugging Face model loading, and the FinBERT training pipeline.
+
+#### 3. Make sure the model can be resolved
+
+By default, the API loads the promoted Hugging Face model first. If that is unavailable, it falls back to `models/nlp/finbert/paysim_sample100k_ep2`, and if neither source works, the service still starts with the heuristic fallback.
+
+### Running The NLP API
+
+From the repository root:
+
+```bash
+python3 -m uvicorn NPL.api.api:app --reload
+```
+
+Default local URL:
+
+- API base: [http://127.0.0.1:8000](http://127.0.0.1:8000)
+- Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- ReDoc: [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
+
+### API Endpoints
+
+#### `GET /health`
+
+Returns whether the NLP model loaded successfully and, when available, the active source, revision, device, and threshold.
+
+This route is the quickest way to confirm where the API is serving the model from:
+
+- If loading succeeds from Hugging Face, the response reflects the hosted repo and revision
+- If Hugging Face fails and the local fallback is used, the response reflects the local checkpoint path
+- If neither model source loads correctly, the API reports a degraded state
+
+#### `POST /api/v1/nlp/score`
+
+Scores fraud risk for a transaction text payload.
+
+Request body shape:
+
+```json
+{
+  "transaction_id": "txn-123",
+  "language": "en",
+  "payload": {
+    "merchant_text": "ACME invoice payment",
+    "narrative_text": "urgent refund request",
+    "invoice_text": null,
+    "ticket_text": null
+  },
+  "metadata": {
+    "amount": 1299.99,
+    "currency": "CAD",
+    "country": "CA",
+    "channel": "online",
+    "transaction_type": "transfer"
+  }
+}
+```
+
+Response body shape:
+
+```json
+{
+  "transaction_id": "txn-123",
+  "score_nlp": 0.91,
+  "model_version": "Lmateosl/guardian-finbert-npl",
+  "status": "ok",
+  "signals": {
+    "semantic_risk": 0.91,
+    "typosquatting_risk": null,
+    "entity_inconsistency": null,
+    "threshold_used": 0.0039,
+    "predicted_fraud": 1.0
+  }
+}
+```
+
+Response field summary:
+
+- `score_nlp`: fraud probability in `[0, 1]`
+- `model_version`: active model source or local checkpoint path
+- `status`: `ok` or `degraded`
+- `signals.semantic_risk`: same score exposed for fusion
+- `signals.threshold_used`: active decision threshold if a model was used
+- `signals.predicted_fraud`: binary flag derived from the threshold when available
+
+### If You Want To Re-Generate The Model (PaySim dataset required)
+
+Training is still fully supported. The promoted Hugging Face model was produced from the PaySim pipeline in this repository. 
+
+#### 1. Create a reproducible sample dataset
+
+Run [`NPL/training/sample_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/sample_paysim.py):
+
+```bash
+python3 -m NPL.training.sample_paysim \
+  --input-path NPL/data/interim/paysim/paysim_nlp_interim.csv \
+  --output-path NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --sample-size 100000
+```
+
+#### 2. Fine-tune FinBERT
+
+Run [`NPL/training/train_finbert_paysim.py`](/Users/mateoff/Desktop/Centennial/6-semestre/capstone/project/Guardian---Tri-Modal_Fraud_Detection/NPL/training/train_finbert_paysim.py):
+
+Recommended 2-epoch run:
+
+```bash
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep2 \
+  --reports-dir reports/nlp/paysim_sample100k_ep2 \
+  --num-train-epochs 2 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+Optional 3-epoch comparison run:
+
+```bash
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep3 \
+  --reports-dir reports/nlp/paysim_sample100k_ep3 \
+  --num-train-epochs 3 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+Generated artifacts:
+
+- Checkpoints in `models/nlp/...`
+- Evaluation reports in `reports/nlp/...`
+- Validation/test metrics including precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, and best threshold
+
+### Running Tests (NLP)
+
+```bash
+python3 -m unittest discover -s NPL/tests -v
+```
+
+This suite covers API behavior, preprocessing, classifier/model loading logic, and training utilities.
+
+---
