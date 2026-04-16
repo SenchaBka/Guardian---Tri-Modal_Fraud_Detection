@@ -55,6 +55,8 @@ class GetSemanticRiskTests(unittest.TestCase):
             model=fake_model,
             device="cpu",
             threshold=0.7,
+            source="local",
+            revision="local",
         )
         fake_torch = types.SimpleNamespace(
             no_grad=lambda: mock.MagicMock(__enter__=lambda *_: None, __exit__=lambda *_: False)
@@ -88,8 +90,6 @@ class ResolveDeviceTests(unittest.TestCase):
     def test_load_bundle_uses_env_overrides_and_moves_model_to_device(self):
         fake_tokenizer = mock.Mock(name="tokenizer")
         fake_model = mock.Mock(name="model")
-        moved_model = mock.Mock(name="moved_model")
-        fake_model.to.return_value = moved_model
         fake_auto_tokenizer = mock.Mock(from_pretrained=mock.Mock(return_value=fake_tokenizer))
         fake_auto_model = mock.Mock(from_pretrained=mock.Mock(return_value=fake_model))
         fake_transformers = types.SimpleNamespace(
@@ -104,9 +104,11 @@ class ResolveDeviceTests(unittest.TestCase):
         with mock.patch.dict(
             os.environ,
             {
-                "NLP_MODEL_DIR": "custom-model",
+                "NLP_MODEL_NAME": "custom-model",
+                "NLP_MODEL_REVISION": "test-rev",
                 "NLP_THRESHOLD": "0.2",
                 "NLP_DEVICE": "cuda",
+                "NLP_CACHE_DIR": "/tmp/hf-cache",
             },
             clear=False,
         ):
@@ -122,10 +124,20 @@ class ResolveDeviceTests(unittest.TestCase):
         self.assertEqual(bundle.model_name, "custom-model")
         self.assertEqual(bundle.threshold, 0.2)
         self.assertEqual(bundle.device, "cuda")
-        fake_auto_tokenizer.from_pretrained.assert_called_once_with("custom-model")
-        fake_auto_model.from_pretrained.assert_called_once_with("custom-model")
+        self.assertEqual(bundle.source, "huggingface")
+        self.assertEqual(bundle.revision, "test-rev")
+        fake_auto_tokenizer.from_pretrained.assert_called_once_with(
+            "custom-model",
+            revision="test-rev",
+            cache_dir="/tmp/hf-cache",
+        )
+        fake_auto_model.from_pretrained.assert_called_once_with(
+            "custom-model",
+            revision="test-rev",
+            cache_dir="/tmp/hf-cache",
+        )
         fake_model.to.assert_called_once_with("cuda")
-        moved_model.eval.assert_called_once()
+        fake_model.eval.assert_called_once()
 
     def test_healthcheck_model_returns_failure_message(self):
         with mock.patch(
