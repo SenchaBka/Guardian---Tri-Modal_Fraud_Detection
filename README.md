@@ -59,5 +59,114 @@ When a modality is missing, weights are divided by the sum of available base wei
 | review   | 0.31 – 0.70       | Manual review           | Forced in fallback > 0.25 or low-confidence partial |
 | block    | 0.71 – 1.00       | Auto-block              | Forced in fallback > 0.60                      |
 
+
 ## Repository Structure
 
+---
+
+## NLP Stream (Luis)
+
+The NLP stream focuses on detecting fraud patterns from textual transaction narratives using a fine-tuned transformer model.
+
+### Model & Approach
+
+- Base model: **ProsusAI/finbert**
+- Task: Binary classification (fraud vs non-fraud)
+- Dataset: **PaySim (synthetic financial transactions)**
+- Input: Structured narrative text generated from transaction fields (type, amount, balances)
+- Output: Fraud probability (`score_nlp`) used by the Fusion Layer
+
+### Key Findings
+
+- The model performs extremely well on **PaySim-style structured narratives**
+- It learns strong signals from:
+  - Transaction type (e.g., CASH_OUT)
+  - Balance inconsistencies
+  - Large transfers and zeroing balances
+- However, it does **not generalize well to free-form human text** (e.g., complaints or emails)
+- This highlights the need for **multi-dataset training (e.g., IEEE, FUNSD)** in future iterations
+
+### Models Trained
+
+Three main configurations were explored:
+
+#### 1. Baseline (Pretrained FinBERT)
+- No fine-tuning
+- Used as reference
+- Poor performance on PaySim task
+
+#### 2. FinBERT – 2 Epochs (Best Practical Model)
+- Fast training
+- Good generalization
+- Selected for API integration
+
+#### 3. FinBERT – 3 Epochs
+- Slightly better training metrics
+- Risk of overfitting due to extreme class imbalance (fraud rate ~0.13%)
+- Used for comparison
+
+### Training Commands
+
+All models are trained using the same pipeline:
+
+#### 2 Epoch Model (Recommended)
+```
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep2 \
+  --reports-dir reports/nlp/paysim_sample100k_ep2 \
+  --num-train-epochs 2 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+#### 3 Epoch Model
+```
+python3 -m NPL.training.train_finbert_paysim \
+  --input NPL/data/processed/paysim/paysim_sample_100k.csv \
+  --model-dir models/nlp/finbert/paysim_sample100k_ep3 \
+  --reports-dir reports/nlp/paysim_sample100k_ep3 \
+  --num-train-epochs 3 \
+  --learning-rate 2e-5 \
+  --max-length 128
+```
+
+#### Baseline (No Fine-Tuning)
+- Directly uses `ProsusAI/finbert`
+- No training command required
+
+### Outputs
+
+Each training run generates:
+
+- Model checkpoints → `models/nlp/...`
+- Evaluation reports → `reports/nlp/...`
+- Metrics include:
+  - Precision / Recall / F1
+  - ROC-AUC / PR-AUC
+  - Confusion Matrix
+  - Best threshold (used later in API)
+
+### API Integration
+
+The trained model is exposed through a FastAPI endpoint:
+
+- Input: standardized NLP contract (transaction_id, text, metadata)
+- Output:
+  - `score_nlp` (fraud probability)
+  - `predicted_fraud` (binary using learned threshold)
+  - additional signals for fusion layer
+
+The API uses the **best validation threshold automatically extracted during training**.
+
+### Running Tests (NLP)
+
+To execute the unit tests for the NLP stream:
+
+```
+python3 -m unittest discover -s NPL/tests -v
+```
+
+This will run all NLP-related test cases including classifier, API, preprocessing, and training utilities.
+
+---

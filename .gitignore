@@ -7,6 +7,7 @@ NLP/data/
 **/data/raw/
 **/data/interim/
 **/data/processed/
+/reports
 
 # Large dataset formats
 *.csv
@@ -66,6 +67,7 @@ env/
 *.pt
 *.pth
 *.onnx
+/models
 
 ########################################
 # TEMP FILES
