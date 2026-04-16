@@ -207,26 +207,6 @@ export NLP_THRESHOLD=0.0039
 
 If the hosted model cannot be loaded and no valid local checkpoint exists, the API still starts, but scoring degrades to the heuristic fallback.
 
-#### Quick Start
-
-With `conda`:
-
-```bash
-conda create -n guardian-npl python=3.12 -y
-conda activate guardian-npl
-pip install -r NPL/requirements.txt
-python3 -m uvicorn NPL.api.api:app --reload
-```
-
-With `venv`:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r NPL/requirements.txt
-python3 -m uvicorn NPL.api.api:app --reload
-```
-
 ### Running The NLP API
 
 From the repository root:
