@@ -138,25 +138,15 @@ This installs the packages needed by the NLP API, preprocessing, tests, Hugging 
 
 #### 3. Make sure the model can be resolved
 
-The default behavior is to load the hosted Hugging Face model:
+By default, the API loads the promoted Hugging Face model first. If that is unavailable, it falls back to `models/nlp/finbert/paysim_sample100k_ep2`, and if neither source works, the service still starts with the heuristic fallback.
 
-- `NLP_MODEL_NAME=Lmateosl/guardian-finbert-npl`
-- `NLP_MODEL_REVISION=main`
+### Why We Selected PR-AUC
 
-Optional local fallback:
+PaySim is highly imbalanced, with a very small fraud class compared to legitimate transactions. Because of that, PR-AUC was more useful than plain accuracy and more informative than ROC-AUC for selecting a fraud model.
 
-- Place a checkpoint in `models/nlp/finbert/paysim_sample100k_ep2`, or
-- point `NLP_MODEL_DIR` to another local checkpoint directory
-
-Optional example overrides:
-
-```bash
-export NLP_MODEL_NAME=Lmateosl/guardian-finbert-npl
-export NLP_MODEL_REVISION=main
-export NLP_THRESHOLD=0.0039
-```
-
-If the hosted model cannot be loaded and no valid local checkpoint exists, the API still starts, but scoring degrades to the heuristic fallback.
+- PR-AUC focuses on precision and recall for the rare positive class
+- it reduces the risk of overvaluing majority-class performance
+- it helped us choose checkpoints that were better aligned with fraud detection instead of overall class separation
 
 ### Running The NLP API
 
