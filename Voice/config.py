@@ -18,4 +18,9 @@ VOICE_DIR = Path(__file__).parent
 MODEL_PATH = VOICE_DIR / "data/ASV/cache/wavlm_lr.joblib"
 THRESHOLD_PATH = VOICE_DIR / "data/ASV/cache/threshold.txt"
 
+# Hugging Face Hub configuration
+HF_REPO_ID = "senchabka/asv-spoof-detector"
+MODEL_FILENAME = "wavlm_lr.joblib"
+THRESHOLD_FILENAME = "threshold.txt"
+
 MAX_UPLOAD_MB = 30
