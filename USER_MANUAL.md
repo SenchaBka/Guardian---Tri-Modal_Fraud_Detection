@@ -146,8 +146,12 @@ Recommended local setup:
 
 - Fusion API on port `8080`
 - NLP API on port `8001`
-- Voice API on port `8002`
+- Voice API on port `8000`
 - Dashboard on port `3000`
+
+On Windows, a one-click launcher is included:
+
+- `start_guardian.bat`
 
 Run Fusion:
 
@@ -164,7 +168,7 @@ python3 -m uvicorn NPL.api.api:app --reload --port 8001
 Run Voice:
 
 ```bash
-python3 -m uvicorn Voice.api:app --reload --port 8002
+python3 -m uvicorn Voice.api:app --reload --port 8000
 ```
 
 Run Dashboard:
@@ -177,6 +181,8 @@ npm run dev
 Notes:
 
 - the dashboard proxy is configured to call `/api` through `localhost:8080`
+- on Windows, `start_guardian.bat` opens Fusion, NLP, Voice, and Frontend automatically
+- the first run may take longer because the NLP and Voice model artifacts are downloaded from Hugging Face and cached locally
 - the dashboard’s live analysis screen currently uses simulated stream outputs for demo interaction
 - the Fusion API itself is real and can be tested through Swagger or direct requests
 
@@ -225,7 +231,7 @@ Start the backend services and the dashboard so the prototype can be used.
 2. Install dependencies if not already installed.
 3. Start Fusion on port `8080`.
 4. Start NLP on port `8001`.
-5. Start Voice on port `8002`.
+5. Start Voice on port `8000`.
 6. Start the dashboard in `guardian-dashboard`.
 
 **Expected Outcome**
@@ -233,6 +239,9 @@ Start the backend services and the dashboard so the prototype can be used.
 - dashboard opens at `http://localhost:3000`
 - Fusion health endpoint is reachable
 - Swagger pages for APIs are available
+
+**Alternative (Windows)**  
+Double-click `start_guardian.bat` from the project root to launch all major services automatically.
 
 ### Task 2: Analyze a transaction in the dashboard
 
@@ -441,6 +450,7 @@ Predictions may not be 100% accurate. The system is a prototype and should be tr
 
 - check whether the correct API service is running
 - verify the port used in the startup command
+- remember that NLP uses `8001` and Voice uses `8000`
 
 ### NLP API starts but returns degraded mode
 
@@ -479,6 +489,7 @@ pip install -r requirements.txt
 ### Why is my prediction slow?
 
 - first-time model loading from Hugging Face may take longer
+- first-time Voice model download may also take time
 - transcription depends on external API latency
 
 ### Why does NLP show degraded status?
