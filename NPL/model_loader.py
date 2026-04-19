@@ -1,0 +1,178 @@
+"""guardian.nlp.model_loader
+
+Model loading utilities for the NLP Stream.
+
+Current goal:
+- Load the trained fraud classifier ONCE (lazy) and reuse it across requests.
+- Prefer the Hugging Face hosted model for Iteration 2 serving.
+- Expose the tokenizer, model, device, source, revision, and calibrated fraud threshold.
+
+Notes:
+- Iteration 2 can now load the promoted model directly from Hugging Face.
+- A local checkpoint fallback is still supported if the hosted model cannot be reached.
+- This keeps the API stable while allowing future model promotion without changing serving code.
+
+Environment variables (optional):
+- NLP_MODEL_NAME: Hugging Face model repo id
+  (default: Lmateosl/guardian-finbert-npl)
+- NLP_MODEL_REVISION: Hugging Face revision or commit hash
+  (default: main)
+- NLP_MODEL_DIR: local fallback directory of the trained checkpoint
+  (default: models/nlp/finbert/paysim_sample100k_ep2)
+- NLP_THRESHOLD: calibrated fraud threshold (default: 0.0039)
+- NLP_DEVICE: 'cpu', 'cuda', or 'mps' (default: auto)
+- NLP_CACHE_DIR: optional custom Hugging Face cache directory
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Tuple
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ModelBundle:
+    """Container for the NLP model artifacts."""
+
+    model_name: str
+    tokenizer: object
+    model: object
+    device: str
+    source: str
+    revision: str
+    threshold: float
+
+
+def _resolve_device() -> str:
+    """Pick a device.
+
+    - If NLP_DEVICE is set, respect it.
+    - Otherwise use CUDA if available, else MPS if available, else CPU.
+    """
+
+    forced = os.getenv("NLP_DEVICE", "").strip().lower()
+    if forced in {"cpu", "cuda", "mps"}:
+        return forced
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        # On Apple Silicon you may want 'mps' if available
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+
+    return "cpu"
+
+
+@lru_cache(maxsize=1)
+def load_trained_nlp_bundle() -> ModelBundle:
+    """Lazy-load and cache the trained NLP model bundle.
+
+    Returns:
+        ModelBundle(tokenizer, model, device, threshold)
+
+    Raises:
+        RuntimeError if transformers/torch are not installed.
+    """
+
+    model_name = os.getenv("NLP_MODEL_NAME", "Lmateosl/guardian-finbert-npl")
+    revision = os.getenv("NLP_MODEL_REVISION", "main")
+    model_dir = os.getenv(
+        "NLP_MODEL_DIR", "models/nlp/finbert/paysim_sample100k_ep2"
+    )
+    threshold = float(os.getenv("NLP_THRESHOLD", "0.0039"))
+    cache_dir = os.getenv("NLP_CACHE_DIR", "").strip() or None
+    device = _resolve_device()
+    logger.info("Loading NLP model...")
+    logger.info("Preferred Hugging Face model: %s @ %s", model_name, revision)
+    logger.info("Local fallback path: %s", model_dir)
+
+    try:
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
+        raise RuntimeError(
+            "transformers is required. Install with: pip install transformers"
+        ) from e
+
+    try:
+        import torch
+    except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
+        raise RuntimeError("torch is required. Install with: pip install torch") from e
+
+    source = "huggingface"
+
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            revision=revision,
+            cache_dir=cache_dir,
+        )
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            revision=revision,
+            cache_dir=cache_dir,
+        )
+        logger.info("Loaded NLP model from Hugging Face")
+    except Exception:
+        logger.warning(
+            "Failed to load model from Hugging Face; falling back to local checkpoint",
+            exc_info=True,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+        source = "local"
+        revision = "local"
+        model_name = model_dir
+        logger.info("Loaded NLP model from local checkpoint")
+
+    try:
+        if device in {"cuda", "mps"}:
+            model.to(device)
+        model.eval()
+    except Exception:
+        logger.error("Failed to finalize model on device", exc_info=True)
+        raise
+
+    logger.info("Model loaded successfully")
+
+    return ModelBundle(
+        model_name=model_name,
+        tokenizer=tokenizer,
+        model=model,
+        device=device,
+        source=source,
+        revision=revision,
+        threshold=threshold,
+    )
+
+
+def healthcheck_model() -> Tuple[bool, str]:
+    """Best-effort healthcheck.
+
+    Used by api.py to confirm the model can load.
+    """
+
+    try:
+        b = load_trained_nlp_bundle()
+        return (
+            True,
+            f"loaded {b.model_name} ({b.source}@{b.revision}) on {b.device} | threshold={b.threshold}",
+        )
+    except Exception as e:
+        logger.error("Failed to load model", exc_info=True)
+        return False, f"model load failed: {e}"
+
+
+# Backwards-compatible alias used by earlier Iteration 1 code.
+load_finbert_bundle = load_trained_nlp_bundle
