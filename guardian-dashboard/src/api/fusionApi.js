@@ -37,12 +37,13 @@ export function simulateNumerical(txn) {
   const ctry = (txn.country || 'US').toUpperCase()
   const cat  = (txn.merchant_category || '').toLowerCase()
 
-  const amtAnomaly  = amt > 5000 ? Math.min(0.95, 0.5 + (amt-5000)/20000) : Math.max(0.08, Math.min(0.35, amt/10000))
-  const geoRisk     = RISK_COUNTRIES.includes(ctry) ? 0.72 : 0.11
-  const patternRisk = HIGH_RISK_CATS.includes(cat)  ? 0.79 : 0.17
+  const amtAnomaly  = amt > 5000 ? Math.min(0.97, 0.5 + (amt-5000)/15000) : Math.max(0.08, Math.min(0.35, amt/10000))
+  const geoRisk     = RISK_COUNTRIES.includes(ctry) ? 0.82 : 0.11
+  const patternRisk = HIGH_RISK_CATS.includes(cat)  ? 0.88 : 0.17
   const velRisk     = 0.24
 
-  const score = +(amtAnomaly*0.35 + velRisk*0.25 + patternRisk*0.25 + geoRisk*0.15).toFixed(4)
+  const compound = (RISK_COUNTRIES.includes(ctry) && HIGH_RISK_CATS.includes(cat)) ? 0.10 : 0.0
+  const score = Math.min(0.98, +(amtAnomaly*0.35 + velRisk*0.20 + patternRisk*0.25 + geoRisk*0.20 + compound).toFixed(4))
   return {
     fraud_probability: score,
     confidence: 0.91,

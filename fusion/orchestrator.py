@@ -265,20 +265,24 @@ class FusionOrchestrator:
     # ------------------------------------------------------------------
 
     async def _call_numerical(self, request: FusionRequest) -> Tuple[float, Dict[str, float]]:
-        if self.use_mocks:
+        if self.use_mocks or not MODALITY_ENDPOINTS.get("numerical"):
             return await self._mock_numerical(request)
-        async with httpx.AsyncClient(timeout=API_TIMEOUTS["numerical"]) as client:
-            payload = {
-                "transaction_id":    request.transaction_id,
-                "amount":            request.transaction_data.amount,
-                "currency":          "USD",
-                "channel":           request.transaction_data.channel.value,
-                "country":           request.transaction_data.country or "US",
-                "merchant_category": request.transaction_data.merchant_category or "retail",
-            }
-            resp = await client.post(MODALITY_ENDPOINTS["numerical"], json=payload)
-            data = resp.json()
-            return data["fraud_score"], data.get("model_contributions", {})
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUTS["numerical"]) as client:
+                payload = {
+                    "transaction_id":    request.transaction_id,
+                    "amount":            request.transaction_data.amount,
+                    "currency":          "USD",
+                    "channel":           request.transaction_data.channel.value,
+                    "country":           request.transaction_data.country or "US",
+                    "merchant_category": request.transaction_data.merchant_category or "retail",
+                }
+                resp = await client.post(MODALITY_ENDPOINTS["numerical"], json=payload)
+                data = resp.json()
+                return data["fraud_score"], data.get("model_contributions", {})
+        except Exception:
+            # Fall back to mock if Ivan's API is unreachable
+            return await self._mock_numerical(request)
 
     async def _call_nlp(self, request: FusionRequest) -> Tuple[float, Dict[str, float]]:
         if self.use_mocks:
@@ -316,7 +320,14 @@ class FusionOrchestrator:
             }
             resp = await client.post(MODALITY_ENDPOINTS["voice"], json=payload)
             data = resp.json()
-            return data["fraud_score"], data.get("signals", {})
+            # Map Arsenii's response to fusion layer format
+            fraud_score = data["spoof_prob"]
+            signals = {
+                "deepfake_probability":   data["spoof_prob"],
+                "bonafide_probability":   data["bonafide_prob"],
+                "threshold":              data["threshold"],
+            }
+            return fraud_score, signals
 
     # ------------------------------------------------------------------
     # Mock implementations (deterministic when seeded)
