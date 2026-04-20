@@ -14,7 +14,7 @@ from sklearn.metrics import roc_curve
 
 import soundfile as sf
 import joblib
-
+from config import MODEL_NAME, DEVICE
 
 TRAIN_PROTOCOL = r"data/ASV/ASVspoof2019.LA.cm.train.trn.txt"
 DEV_PROTOCOL   = r"data/ASV/ASVspoof2019.LA.cm.dev.trl.txt"
@@ -23,10 +23,6 @@ TRAIN_AUDIO_DIR = r"data/ASV/train_audio/ASVspoof2019_LA_train/flac"
 DEV_AUDIO_DIR   = r"data/ASV/dev_audio/ASVspoof2019_LA_dev/flac"
 
 CACHE_DIR = r"data/ASV/cache"  # features cached here
-
-# Modern + easy model (stronger than wav2vec2 for many spoof tasks)
-MODEL_NAME = "microsoft/wavlm-base"
-
 
 # =========================
 # UTILITIES
@@ -144,7 +140,6 @@ This block sets up a pretrained audio model (WavLM)
 ready to convert raw audio into embeddings efficiently
 and correctly.
 '''
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
 model = AutoModel.from_pretrained(MODEL_NAME).to(DEVICE)
 model.eval()
@@ -226,7 +221,7 @@ def main():
     X_dev,   y_dev   = build_features(dev_items,   DEV_AUDIO_DIR,   str(dev_cache))
 
     # Train the model
-    clf = LogisticRegression(max_iter=2000, n_jobs=-1)
+    clf = LogisticRegression(max_iter=2000)
     clf.fit(X_train, y_train)
 
     # Probability of bonafide (real)
@@ -235,7 +230,6 @@ def main():
     # Compute and display EER
     eer, thr = compute_eer(y_dev, scores)
     print(f"\nEER = {eer*100:.2f}%  (threshold={thr:.4f})")
-    print("Note: lower EER is better.\n")
 
     # Save the model
     Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)

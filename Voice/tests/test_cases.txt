@@ -1,0 +1,347 @@
+VOICE MODULE — TEST CASES
+=========================
+Fields: Test Steps | Input Data | Expected Results | Actual Results | Test Environment | Execution Status | Bug Severity | Bug Priority | Notes
+
+===========================================================================
+FILE: test_api.py
+===========================================================================
+
+TEST: test_score_voice_empty_file
+  Test Steps        : 1. Create a 0-byte in-memory WAV buffer.
+                      2. POST it to /api/v1/voice/score via TestClient.
+                      3. Check HTTP status code and response detail.
+  Input Data        : file="test.wav", content=b"", content-type=audio/wav
+  Expected Results  : HTTP 400; response JSON detail contains "Empty upload"
+  Actual Results    :
+  Test Environment  : FastAPI TestClient; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Validates the server-side empty file guard before any processing begins.
+
+---------------------------------------------------------------------------
+
+TEST: test_score_voice_file_too_large
+  Test Steps        : 1. Generate a 31 MB byte string (exceeds 30 MB limit).
+                      2. POST it to /api/v1/voice/score via TestClient.
+                      3. Check HTTP status code and response detail.
+  Input Data        : file="test.wav", content=b"x" * 31*1024*1024, content-type=audio/wav
+  Expected Results  : HTTP 413; response JSON detail contains "File too large"
+  Actual Results    :
+  Test Environment  : FastAPI TestClient; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : MAX_UPLOAD_MB is 30; this test uses 31 MB to confirm the boundary is enforced.
+
+---------------------------------------------------------------------------
+
+TEST: test_score_voice_success
+  Test Steps        : 1. Mock load_audio_16k_mono to return [[0.1, 0.2, 0.3]].
+                      2. Mock score_audio to return label="BONAFIDE", bonafide_prob=0.95,
+                         spoof_prob=0.05, threshold=0.5.
+                      3. POST a small WAV file to /api/v1/voice/score.
+                      4. Verify response body fields.
+  Input Data        : file="test.wav", content=b"fake audio", content-type=audio/wav
+  Expected Results  : HTTP 200; response label="BONAFIDE"; response filename="test.wav"
+  Actual Results    :
+  Test Environment  : FastAPI TestClient; load_audio_16k_mono and score_audio patched
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Happy-path test; confirms the API correctly relays scoring results and filename.
+
+---------------------------------------------------------------------------
+
+TEST: test_transcribe_audio_empty_file
+  Test Steps        : 1. Create a 0-byte in-memory WAV buffer.
+                      2. POST it to /api/v1/voice/transcribe via TestClient.
+                      3. Check HTTP status code and response detail.
+  Input Data        : file="test.wav", content=b"", content-type=audio/wav
+  Expected Results  : HTTP 400; response JSON detail contains "Empty upload"
+  Actual Results    :
+  Test Environment  : FastAPI TestClient; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Mirrors the empty-file guard check for the transcribe endpoint.
+
+===========================================================================
+FILE: test_config.py
+===========================================================================
+
+TEST: test_missing_api_key
+  Test Steps        : 1. Remove ELEVENLABS_API_KEY from the environment via monkeypatch.
+                      2. Call get_api_key().
+                      3. Confirm the exception type and message.
+  Input Data        : ELEVENLABS_API_KEY env var = unset
+  Expected Results  : ValueError raised with message matching "Missing ELEVENLABS_API_KEY"
+  Actual Results    :
+  Test Environment  : pytest with monkeypatch; no external services
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Ensures the app fails fast with a clear error on missing credentials.
+
+---------------------------------------------------------------------------
+
+TEST: test_get_api_key_success
+  Test Steps        : 1. Set ELEVENLABS_API_KEY="test-api-key-12345" via monkeypatch.
+                      2. Call get_api_key().
+                      3. Assert the return value.
+  Input Data        : ELEVENLABS_API_KEY="test-api-key-12345"
+  Expected Results  : Returns exactly "test-api-key-12345"
+  Actual Results    :
+  Test Environment  : pytest with monkeypatch; no external services
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Complements test_missing_api_key; confirms no transformation is applied to the raw key value.
+
+---------------------------------------------------------------------------
+
+TEST: test_config_constants
+  Test Steps        : 1. Import config module constants.
+                      2. Assert each constant against its expected value/type.
+  Input Data        : No external input; reads module-level constants at import time
+  Expected Results  : MODEL_NAME="microsoft/wavlm-large" (str);
+                      DEVICE matches torch.cuda.is_available() result ("cuda"/"cpu");
+                      MODEL_PATH and THRESHOLD_PATH are pathlib.Path instances;
+                      MAX_UPLOAD_MB=30 (positive int)
+  Actual Results    :
+  Test Environment  : pytest; torch available
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : DEVICE assertion is hardware-dependent; passes on both CPU and GPU machines.
+
+===========================================================================
+FILE: test_deepfake_detector.py
+===========================================================================
+
+TEST: test_score_audio_bonafide
+  Test Steps        : 1. Mock extract_embeddings to return a 4-element numpy array.
+                      2. Mock clf.predict_proba to return [[0.05, 0.95]].
+                      3. Call score_audio(b"fake audio").
+                      4. Assert label, probabilities, and threshold.
+  Input Data        : audio_bytes=b"fake audio"; predict_proba=[[0.05, 0.95]]
+  Expected Results  : label="BONAFIDE"; bonafide_prob=0.95; spoof_prob=0.05; threshold is float
+  Actual Results    :
+  Test Environment  : pytest; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : bonafide_prob > threshold (0.5) → BONAFIDE classification.
+
+---------------------------------------------------------------------------
+
+TEST: test_score_audio_spoof
+  Test Steps        : 1. Mock extract_embeddings to return a 4-element numpy array.
+                      2. Mock clf.predict_proba to return [[0.7, 0.3]].
+                      3. Call score_audio(b"fake audio").
+                      4. Assert label and probabilities.
+  Input Data        : audio_bytes=b"fake audio"; predict_proba=[[0.7, 0.3]]
+  Expected Results  : label="SPOOF"; bonafide_prob=0.3; spoof_prob=0.7
+  Actual Results    :
+  Test Environment  : pytest; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : bonafide_prob < threshold (0.5) → SPOOF classification.
+
+---------------------------------------------------------------------------
+
+TEST: test_score_audio_rounding
+  Test Steps        : 1. Mock clf.predict_proba to return [[0.123456789, 0.876543211]].
+                      2. Call score_audio(b"fake audio").
+                      3. Verify all four keys are present and values are rounded to 6 places.
+  Input Data        : predict_proba=[[0.123456789, 0.876543211]]
+  Expected Results  : Keys: {label, bonafide_prob, spoof_prob, threshold};
+                      bonafide_prob=0.876543; spoof_prob=0.123457
+  Actual Results    :
+  Test Environment  : pytest; Voice.model_loader fully mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Confirms consistent 6-decimal rounding and complete response schema.
+
+===========================================================================
+FILE: test_feature_extractor.py
+===========================================================================
+
+TEST: test_extract_embeddings_returns_numpy_array
+  Test Steps        : 1. Mock feature_extractor to return input_values tensor.
+                      2. Mock wavlm to return last_hidden_state of shape (1, 100, 768).
+                      3. Call extract_embeddings with a 16000-sample float32 array.
+                      4. Check result type and dtype.
+  Input Data        : audio=np.random.randn(16000).astype(float32); hidden_state shape=(1,100,768)
+  Expected Results  : Result is np.ndarray with dtype=float32
+  Actual Results    :
+  Test Environment  : pytest; transformers and wavlm mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : dtype=float32 is required downstream by the sklearn classifier; a float64 output would cause silent precision issues.
+
+---------------------------------------------------------------------------
+
+TEST: test_extract_embeddings_correct_shape
+  Test Steps        : 1. Mock wavlm to return last_hidden_state of shape (1, 100, 768).
+                      2. Call extract_embeddings with a 16000-sample array.
+                      3. Assert output shape.
+  Input Data        : audio=np.random.randn(16000).astype(float32); hidden_state shape=(1,100,768)
+  Expected Results  : Output shape is (768,) — time dimension mean-pooled then batch dim squeezed
+  Actual Results    :
+  Test Environment  : pytest; transformers and wavlm mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Validates the mean(dim=1) → squeeze(0) reduction pipeline.
+
+---------------------------------------------------------------------------
+
+TEST: test_extract_embeddings_calls_feature_extractor_with_16k_sr
+  Test Steps        : 1. Mock feature_extractor and wavlm.
+                      2. Call extract_embeddings with a float32 audio array.
+                      3. Inspect the call arguments of the mocked feature_extractor.
+  Input Data        : audio=np.random.randn(16000).astype(float32)
+  Expected Results  : feature_extractor called exactly once with sampling_rate=16000
+                      and return_tensors="pt"
+  Actual Results    :
+  Test Environment  : pytest; transformers and wavlm mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Ensures the correct sample rate is always passed to the HuggingFace processor.
+
+===========================================================================
+FILE: test_model_loader.py
+===========================================================================
+
+TEST: test_load_threshold_success
+  Test Steps        : 1. Mock THRESHOLD_PATH.exists() to return True.
+                      2. Mock THRESHOLD_PATH.read_text() to return "0.5\n".
+                      3. Call load_threshold() and assert result.
+  Input Data        : threshold file content="0.5\n"
+  Expected Results  : Returns 0.5 as a float
+  Actual Results    :
+  Test Environment  : pytest; file I/O mocked via patch
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Baseline happy-path; the trailing newline is intentional to simulate real file content written by the training script.
+
+---------------------------------------------------------------------------
+
+TEST: test_load_threshold_file_missing
+  Test Steps        : 1. Mock THRESHOLD_PATH.exists() to return False.
+                      2. Call load_threshold().
+                      3. Confirm exception message.
+  Input Data        : threshold file does not exist
+  Expected Results  : Exception raised matching "Threshold file missing"
+  Actual Results    :
+  Test Environment  : pytest; file I/O mocked via patch
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Covers the missing file guard on startup/inference.
+
+---------------------------------------------------------------------------
+
+TEST: test_load_threshold_invalid_content
+  Test Steps        : 1. Mock THRESHOLD_PATH.exists() to return True.
+                      2. Mock THRESHOLD_PATH.read_text() to return "invalid_number".
+                      3. Call load_threshold() and confirm exception.
+  Input Data        : threshold file content="invalid_number"
+  Expected Results  : Exception raised matching "Invalid threshold file"
+  Actual Results    :
+  Test Environment  : pytest; file I/O mocked via patch
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Ensures non-numeric threshold content is caught and reported clearly.
+
+---------------------------------------------------------------------------
+
+TEST: test_load_threshold_strips_whitespace
+  Test Steps        : 1. Mock THRESHOLD_PATH.exists() to return True.
+                      2. Mock THRESHOLD_PATH.read_text() to return "  0.75  \n".
+                      3. Call load_threshold() and assert result.
+  Input Data        : threshold file content="  0.75  \n"
+  Expected Results  : Returns 0.75 (whitespace stripped before float conversion)
+  Actual Results    :
+  Test Environment  : pytest; file I/O mocked via patch
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Robustness check; hand-edited threshold files commonly contain leading/trailing spaces.
+
+===========================================================================
+FILE: test_preprocessor.py
+===========================================================================
+
+TEST: test_load_audio_success
+  Test Steps        : 1. Mock librosa.load to return (5-sample float array, 16000).
+                      2. Mock librosa.effects.trim to return a 3-sample trimmed array.
+                      3. Call load_audio_16k_mono("test.wav").
+                      4. Verify librosa.load args, trim top_db, and output type.
+  Input Data        : filepath="test.wav"; mocked raw audio=[0.1,0.2,0.3,0.4,0.5] at 16kHz
+  Expected Results  : librosa.load called with sr=16000, mono=True;
+                      trim called with top_db=30;
+                      result is np.ndarray with dtype=float32
+  Actual Results    :
+  Test Environment  : pytest; librosa mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : top_db=30 is a deliberate sensitivity choice; changing it would affect how much silence is stripped before feature extraction.
+
+---------------------------------------------------------------------------
+
+TEST: test_load_audio_empty_raises_error
+  Test Steps        : 1. Mock librosa.load to return an empty numpy array.
+                      2. Call load_audio_16k_mono("empty.wav").
+                      3. Confirm exception type and message.
+  Input Data        : filepath="empty.wav"; mocked audio=np.array([])
+  Expected Results  : ValueError raised matching "Empty or unreadable audio"
+  Actual Results    :
+  Test Environment  : pytest; librosa mocked
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Guards against silent failures when librosa loads a corrupt/empty file.
+
+===========================================================================
+FILE: test_transcription.py
+===========================================================================
+
+TEST: test_transcribe_audio_file
+  Test Steps        : 1. Create a FakeClient whose convert() asserts model_id="scribe_v2",
+                         diarize=True, tag_audio_events=True, and returns "Test".
+                      2. Write b"fake audio" to a real temp WAV file.
+                      3. Call transcribe_audio_file(tmp_path, FakeClient()).
+                      4. Assert return value; delete temp file in cleanup.
+  Input Data        : Real temp WAV file with content=b"fake audio"; FakeClient stub
+  Expected Results  : Returns "Test"
+  Actual Results    :
+  Test Environment  : pytest; real filesystem temp file; ElevenLabs client stubbed
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Verifies correct API parameters are forwarded to the transcription client.
+
+---------------------------------------------------------------------------
+
+TEST: test_transcribe_audio_file_not_found
+  Test Steps        : 1. Create a FakeClient stub.
+                      2. Call transcribe_audio_file("/nonexistent/file.wav", FakeClient()).
+                      3. Confirm exception type.
+  Input Data        : filepath="/nonexistent/file.wav"
+  Expected Results  : FileNotFoundError raised
+  Actual Results    :
+  Test Environment  : pytest; real filesystem; ElevenLabs client stubbed
+  Execution Status  :
+  Bug Severity      :
+  Bug Priority      :
+  Notes             : Uses the real filesystem (no mock) to confirm the file-open guard fires before any network call is made to the ElevenLabs API.
+
