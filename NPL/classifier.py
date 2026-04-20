@@ -44,6 +44,15 @@ def _clip01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 
 
+def _sigmoid(x: float) -> float:
+    x = float(x)
+    if x >= 0:
+        z = math.exp(-x)
+        return 1.0 / (1.0 + z)
+    z = math.exp(x)
+    return z / (1.0 + z)
+
+
 # -----------------------------
 # Heuristic fallback
 # -----------------------------
@@ -133,6 +142,47 @@ def get_semantic_risk(text: str, *, max_length: int = 256) -> SemanticRiskResult
     try:
         logger.info("Running NLP inference...")
         bundle = load_trained_nlp_bundle()
+        if getattr(bundle, "backend", "transformer") == "sklearn":
+            vectorizer = bundle.vectorizer
+            model = bundle.model
+            features = vectorizer.transform([cleaned])
+
+            if hasattr(model, "predict_proba"):
+                fraud_prob = float(model.predict_proba(features)[0][1])
+                predicted_fraud = float(fraud_prob >= float(bundle.threshold))
+                returned_threshold = float(bundle.threshold)
+                details = {
+                    "fraud_probability": fraud_prob,
+                    "threshold": returned_threshold,
+                    "predicted_fraud": predicted_fraud,
+                }
+            elif hasattr(model, "decision_function"):
+                raw_score = float(model.decision_function(features)[0])
+                raw_threshold = float(bundle.threshold)
+                fraud_prob = _sigmoid(raw_score)
+                returned_threshold = _sigmoid(raw_threshold)
+                predicted_fraud = float(raw_score >= raw_threshold)
+                details = {
+                    "fraud_probability": fraud_prob,
+                    "threshold": returned_threshold,
+                    "predicted_fraud": predicted_fraud,
+                    "decision_score_raw": raw_score,
+                    "decision_threshold_raw": raw_threshold,
+                }
+            else:
+                raise RuntimeError("Unsupported sklearn model: missing predict_proba/decision_function")
+
+            logger.info("Fraud probability: %.6f", fraud_prob)
+            if abs(fraud_prob - returned_threshold) < 0.05:
+                logger.warning("Very low confidence prediction")
+
+            return SemanticRiskResult(
+                score=_clip01(fraud_prob),
+                model_version=bundle.model_name,
+                details=details,
+                threshold=returned_threshold,
+            )
+
         tokenizer = bundle.tokenizer
         model = bundle.model
         device = bundle.device
@@ -147,7 +197,6 @@ def get_semantic_risk(text: str, *, max_length: int = 256) -> SemanticRiskResult
             padding=False,
         )
 
-        # Move inputs to device
         if device in {"cuda", "mps"}:
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
@@ -156,9 +205,6 @@ def get_semantic_risk(text: str, *, max_length: int = 256) -> SemanticRiskResult
             logits = outputs.logits.squeeze(0).detach().cpu().tolist()
 
         probs = _softmax(logits)
-
-        # Binary fraud classifier convention used in Iteration 2:
-        # class 0 = non-fraud, class 1 = fraud
         fraud_prob = float(probs[1]) if len(probs) > 1 else float(probs[0])
 
         id2label = getattr(model.config, "id2label", {}) or {}

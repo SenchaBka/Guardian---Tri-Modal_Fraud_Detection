@@ -82,6 +82,30 @@ class GetSemanticRiskTests(unittest.TestCase):
         self.assertIsNone(result.threshold)
         self.assertEqual(result.details["fallback_used"], 1.0)
 
+    def test_returns_sigmoid_scored_prediction_for_sklearn_bundle(self):
+        fake_vectorizer = mock.Mock()
+        fake_vectorizer.transform.return_value = "features"
+        fake_model = mock.Mock(spec=["decision_function"])
+        fake_model.decision_function.return_value = [1.5]
+        bundle = ModelBundle(
+            model_name="linear-svm-local",
+            model=fake_model,
+            vectorizer=fake_vectorizer,
+            device="cpu",
+            source="local",
+            revision="local",
+            threshold=0.8,
+            backend="sklearn",
+        )
+
+        with mock.patch("NPL.classifier.load_trained_nlp_bundle", return_value=bundle):
+            result = get_semantic_risk("wire transfer now")
+
+        self.assertEqual(result.model_version, "linear-svm-local")
+        self.assertGreater(result.score, 0.5)
+        self.assertEqual(result.details["predicted_fraud"], 1.0)
+        self.assertIn("decision_score_raw", result.details)
+
 
 class ResolveDeviceTests(unittest.TestCase):
     def tearDown(self):
