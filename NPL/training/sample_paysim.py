@@ -87,6 +87,9 @@ def main():
     df = df.dropna()
     print(f"[sample] After cleaning: {df.shape}")
 
+    if "dataset_source" not in df.columns:
+        df["dataset_source"] = "paysim"
+
     # Fraud rate before sampling
     fraud_rate_before = df[label_col].mean()
     print(f"[sample] Fraud rate (before): {fraud_rate_before:.6f}")

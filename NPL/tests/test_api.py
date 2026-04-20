@@ -18,7 +18,14 @@ def build_request(text="merchant details"):
 
 class HealthEndpointTests(unittest.TestCase):
     def test_health_includes_loaded_bundle_details(self):
-        bundle = mock.Mock(threshold=0.3, model_name="finbert-local", device="cpu")
+        bundle = mock.Mock(
+            threshold=0.3,
+            model_name="finbert-local",
+            device="cpu",
+            source="huggingface",
+            revision="main",
+            backend="transformer",
+        )
 
         with mock.patch("NPL.api.api.healthcheck_model", return_value=(True, "loaded")):
             with mock.patch("NPL.api.api.load_trained_nlp_bundle", return_value=bundle):
@@ -28,6 +35,7 @@ class HealthEndpointTests(unittest.TestCase):
         self.assertEqual(response["threshold"], 0.3)
         self.assertEqual(response["model_version"], "finbert-local")
         self.assertEqual(response["device"], "cpu")
+        self.assertEqual(response["model_backend"], "transformer")
 
     def test_health_degrades_when_model_load_fails(self):
         with mock.patch(

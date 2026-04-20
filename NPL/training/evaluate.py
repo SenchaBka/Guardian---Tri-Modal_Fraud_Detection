@@ -17,15 +17,25 @@ from .utils import (
 )
 
 
+def get_positive_scores(model: Any, X_test: pd.Series):
+    """Return positive-class scores for binary classifiers."""
+
+    if hasattr(model, "predict_proba"):
+        return model.predict_proba(X_test)[:, 1]
+    if hasattr(model, "decision_function"):
+        return model.decision_function(X_test)
+    raise TypeError("Model must expose predict_proba() or decision_function()")
+
+
 def evaluate_model(
     model: Any,
     X_test: pd.Series,
     y_test: pd.Series,
     threshold: float = 0.5,
 ) -> dict[str, float | int | list[list[int]]]:
-    """Evaluate a classifier that exposes predict_proba."""
+    """Evaluate a classifier that exposes predict_proba or decision_function."""
 
-    y_prob = model.predict_proba(X_test)[:, 1]
+    y_prob = get_positive_scores(model, X_test)
     y_pred = (y_prob >= threshold).astype(int)
     metrics = compute_metrics(y_test, y_pred, y_prob)
     metrics["threshold"] = float(threshold)
